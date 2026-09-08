@@ -1,0 +1,10 @@
+# OS and editor leftovers
+.DS_Store
+.idea/
+
+# Build output
+Builds/
+cmake-build-*/
+
+# Submission archive
+Archive.zip
