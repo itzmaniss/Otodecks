@@ -1,0 +1,910 @@
+%==============================================================================
+%  Otodecks - Implementation Report
+%  Compiles with pdfLaTeX on Overleaf. No non-standard packages.
+%
+%  Figures live in figures/. A figure that is not present renders as a labelled
+%  placeholder box so the document still compiles.
+%==============================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage[font=small,labelfont=bf]{caption}
+\usepackage[hidelinks]{hyperref}
+
+\graphicspath{{figures/}}
+
+\definecolor{placeholdergrey}{gray}{0.45}
+\definecolor{codebg}{gray}{0.96}
+\definecolor{codekw}{RGB}{0,90,160}
+\definecolor{codecmt}{RGB}{100,120,100}
+\definecolor{codestr}{RGB}{160,60,40}
+
+% Long \code{} identifiers cannot hyphenate, which pushes lines into the margin.
+% Let TeX loosen the paragraph slightly instead of breaking identifiers with a
+% hyphen that a reader could mistake for part of the name.
+\emergencystretch=3em
+
+\newcommand{\code}[1]{\texttt{#1}}
+
+%------------------------------------------------------------------------------
+% \smartfig[width]{file stem}{caption}{label}
+% Includes figures/<stem>.png if it exists, otherwise a placeholder box naming
+% the file that is still missing.
+%------------------------------------------------------------------------------
+\newcommand{\figplaceholder}[1]{%
+  \fbox{\parbox[c][3.2cm][c]{0.88\textwidth}{%
+    \centering
+    \color{placeholdergrey}
+    \ttfamily figures/#1\\[0.6em]
+    \normalfont\itshape figure not found
+  }}%
+}
+\newcommand{\smartfig}[4][\linewidth]{%
+  \begin{figure}[H]
+    \centering
+    \IfFileExists{figures/#2.png}%
+      {\includegraphics[width=#1]{#2.png}}%
+      {\figplaceholder{#2.png}}
+    \caption{#3}\label{#4}
+  \end{figure}%
+}
+
+\lstdefinestyle{cpp}{
+  language=C++,
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecmt}\itshape,
+  stringstyle=\color{codestr},
+  backgroundcolor=\color{codebg},
+  numbers=none,
+  frame=single,
+  rulecolor=\color{codebg},
+  breaklines=true,
+  columns=fullflexible,
+  showstringspaces=false,
+  xleftmargin=0.5em,
+  framexleftmargin=0.5em,
+}
+\lstset{style=cpp}
+
+\hypersetup{
+  pdftitle={Otodecks: A Two-Deck DJ Application},
+  pdfauthor={Balasubramanian Manish},
+}
+
+\begin{document}
+
+\begin{titlepage}
+    \centering
+
+    \vspace*{\fill}
+
+    {\Huge\bfseries Otodecks: A Two-Deck DJ Application\par}
+
+    \vspace{1cm}
+
+    {\Large Object Oriented Programming\par}
+    {\large Implementation Report\par}
+
+    \vspace{2cm}
+
+    {\large
+    Balasubramanian Manish\\
+    University of London\\
+    \today
+    }
+
+    \vspace*{\fill}
+
+\end{titlepage}
+
+% \begin{abstract}
+% \noindent
+% Otodecks is a two-deck DJ application written in C++ with the JUCE framework. It
+% plays two tracks at once with independent volume and speed, keeps a searchable
+% music library that survives between sessions, provides eight hot cue slots per
+% track, records either deck in isolation or the microphone to a \code{.wav} file,
+% manages a panel of loop samples, and estimates the tempo of a track from its
+% audio. This report covers how each requirement is implemented, why the code is
+% shaped the way it is, the bugs found and fixed along the way, and what still does
+% not work.
+% \end{abstract}
+
+% \vfill
+% \noindent\rule{\linewidth}{0.4pt}\\[0.4em]
+% \small
+% \textbf{Note on figures.} Code figures in this report are screenshots taken with
+% the \emph{CodeSnap} extension for Visual Studio Code. Interface figures are
+% screenshots of the running application. Every fragment shown is the code as it
+% stands, not a tidied-up retelling of it.
+% \normalsize
+
+\clearpage
+
+%==============================================================================
+\section{What was built, and what was already there}
+%==============================================================================
+
+The starting point was the module template: \code{Main.cpp},
+\code{MainComponent}, \code{DeckGUI}, \code{DJAudioPlayer} and
+\code{WaveformDisplay}. Everything else is mine.
+
+To make that boundary checkable, every region I wrote is wrapped in \code{// My
+code starts here} and \code{// My code ends here}. In the five template files
+those markers surround only what I added or changed. In the nine new classes they
+surround the whole file.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+\textbf{Template, extended by me} & \textbf{Written from scratch} \\
+\midrule
+\code{Main.cpp} (comment removal only)            & \code{Track} \\
+\code{MainComponent.h/.cpp}                       & \code{PersistenceManager} \\
+\code{DeckGUI.h/.cpp}                             & \code{MusicLibrary} \\
+\code{DJAudioPlayer.h/.cpp}                       & \code{PlaylistComponent} \\
+\code{WaveformDisplay.h/.cpp} (comments only)     & \code{HotCueComponent} \\
+                                                  & \code{AudioRecorder} \\
+                                                  & \code{SamplePlayer} \\
+                                                  & \code{LoopSampler} \\
+                                                  & \code{BPMAnalyser} \\
+\bottomrule
+\end{tabular}
+\caption{Division of work between template code and code written for this assignment.}
+\end{table}
+
+Just under 4{,}000 lines including blank lines, or a little over 3{,}000 without
+them. The largest single file is \code{LoopSampler.cpp} at 376 lines.
+
+One structural decision shapes most of what follows. \textbf{The application does
+not use a \code{MixerAudioSource}.} The template summed both decks through one,
+which produces a single mixed buffer. That works fine until you need to record
+deck one without deck two bleeding into the file, at which point there is nothing
+left to tap. Each deck is now rendered into its own scratch buffer, offered to
+the recorder, and added to the output by hand. That is what the mixer was doing
+anyway, minus the ability to intercept a single source.
+Section~\ref{sec:r4} covers it properly; it is the reason the recorder works at
+all.
+
+\smartfig{app-overview}{The application window. Two decks across the top, the
+recorder status bar beneath them, and the music library and loop sampler sharing
+the bottom strip.}{fig:overview}
+
+%==============================================================================
+\section{R1: Core deck functionality}
+%==============================================================================
+
+\subsection{R1A: Loading audio files into audio players}
+
+Audio can reach a deck four ways: the deck's own LOAD button, a file dragged onto
+the deck, the playlist's LOAD LEFT and LOAD RIGHT buttons, and the sampler's
+``\code{> L}'' and ``\code{> R}'' buttons. All four funnel into a single
+function, so there is exactly one place where a file becomes a loaded deck.
+
+\smartfig{01-deckgui-loadfile}{\code{DeckGUI::loadFile}, the one path by which
+audio reaches a deck.}{fig:loadfile}
+
+The waveform display reads the file itself instead of asking the player for
+samples, so both of them need the \code{URL}. Loading a file also adds it to the
+library, because hot cues are stored on the library track, and a file dragged
+straight onto a deck would otherwise have nowhere to put its cues.
+
+\paragraph{A template bug fixed here.} In the template a dropped file went
+straight to \code{player->loadURL(...)}, which loads the player but not the
+waveform, so a dragged-in file played against a blank display. The drop handler
+now calls \code{loadFile} like every other entry point, so the two cannot drift
+apart again.
+
+\subsection{R1B: Playing two or more tracks simultaneously}
+
+Two \code{DJAudioPlayer} instances, two \code{DeckGUI}s, summed once per audio
+block. The decks are fully independent: separate transports, separate gain,
+separate resampling ratio, separate cue sets.
+
+\smartfig{05-audio-block}{Each deck is rendered separately and summed by hand.}{fig:audioblock}
+
+\subsection{R1C: Mixing by varying volume}
+
+Each deck's VOL slider runs from 0.0 to 1.0 and drives
+\code{AudioTransportSource::setGain}. Lowering one deck while raising the other is
+the mix. The slider carries a text box showing its value to two decimal places,
+so a level can be returned to deliberately instead of by eye.
+
+\subsection{R1D: Speeding up and slowing down}
+
+The SPEED slider drives \code{ResamplingAudioSource::setResamplingRatio} over a
+range of $0.25\times$ to $3.0\times$.
+
+$1.0$ sits at the \emph{middle} of the slider's travel instead of a
+quarter of the way along, because normal speed is the value a DJ keeps coming
+back to:
+
+\begin{lstlisting}
+speedSlider.setSkewFactorFromMidPoint(defaultSpeed);
+\end{lstlisting}
+
+The lower bound is $0.25$ rather than zero. A resampling ratio of zero does
+not mean ``paused''. It stalls the resampler outright. \code{DJAudioPlayer}
+rejects it independently of the slider, so the guard survives if the range is
+ever widened:
+
+\begin{lstlisting}
+// A ratio of zero stalls the resampler rather than pausing it, so it is
+// rejected along with negatives.
+if (ratio <= 0 || ratio > 100.0)
+\end{lstlisting}
+
+\smartfig{deck-controls}{A single deck: transport, volume, speed, position,
+waveform, the hot cue grid and the record button.}{fig:deck}
+
+\subsection{Two further template bugs}
+
+\paragraph{Sliders started at the bottom of their range.} JUCE initialises a
+slider to its minimum. With VOL at $0$ and SPEED at $0$, a freshly opened deck
+was silent \emph{and} stalled, which reads as a broken application rather than a
+defaulted one. Both now start at their real values, set without notification
+because the player already holds them.
+
+\smartfig{02-deck-defaults}{Slider defaults, and putting normal speed at the
+centre of the travel.}{fig:defaults}
+
+\paragraph{\code{getPositionRelative()} divided by zero.} On an empty deck the
+track length is $0$, so the division returned NaN. That NaN then propagated into
+the waveform playhead and the position slider, where it was considerably harder
+to diagnose than at its source.
+
+\smartfig{03-position-nan-guard}{The empty-deck guard, added where the NaN is
+created rather than where it surfaces.}{fig:nanguard}
+
+\paragraph{The position slider is now a playhead as well as a control.} A 100\,ms
+timer moves it with the audio, but it yields while the user is dragging it.
+Without that check the timer and the user fight over the same control:
+
+\begin{lstlisting}
+if (!posSlider.isMouseButtonDown())
+{
+    posSlider.setValue(position, dontSendNotification);
+}
+\end{lstlisting}
+
+%==============================================================================
+\section{R2: The music library}
+%==============================================================================
+
+\subsection{R2A: Loading multiple files and displaying track details}
+
+\code{PlaylistComponent} is a \code{TableListBox} with three columns: Title,
+Duration and BPM. Files are added through ADD TRACKS, which allows a multiple
+selection, or by dragging a selection of files onto the table.
+
+\code{Track} is deliberately plain data: a path, a display name, a length, a BPM,
+a date added, and its cue positions. It owns no audio resources, which is what
+makes it safe to copy freely between the library, the table and the decks.
+Duration is read once, when the track is added.
+
+\smartfig{06-track-fromfile}{Reading a track's duration. A file the format
+manager cannot read still becomes a row, so the user can see it and work out why
+it will not play.}{fig:trackfromfile}
+
+\code{MusicLibrary} is a \code{ChangeBroadcaster} and the playlist listens to it.
+Nothing ever has to remember to tell the table to repaint; the table rebuilds
+itself whenever the library says it has changed.
+
+Beyond the requirement there is a search box, filtering by title and ignoring
+case. The filter lives in the library and not in the table.
+
+\smartfig{07-library-search}{Search lives in the library, which returns the
+indices of matching tracks.}{fig:search}
+
+The playlist stores those indices in \code{visibleRows}, which makes a table row
+and a library index two different things. They are converted in one place,
+\code{libraryIndexForRow}, which also absorbs the case where a repaint arrives
+carrying a row number the library has since outgrown.
+
+\smartfig{playlist}{The library table with titles, durations and detected BPM.}{fig:playlist}
+\smartfig{playlist-search}{The same library filtered by the search box.}{fig:playlistsearch}
+
+\subsection{R2B: Loading from the library to different decks}
+
+LOAD LEFT and LOAD RIGHT send the selected track to deck one or deck two, and
+double-clicking a row loads deck one. The playlist does not know that
+\code{DeckGUI} exists. It calls a \code{std::function} supplied by its owner:
+
+\smartfig{08-load-to-deck-callback}{\code{MainComponent} wires the playlist to the
+decks. The sampler is wired the same way.}{fig:callback}
+
+Neither panel holds a deck pointer or includes \code{DeckGUI.h}, which keeps both
+of them independently testable and keeps the dependency pointing one way.
+
+\subsection{R2C: Persistence across restarts}
+
+The library is written to \code{library.json} in the operating system's
+application data folder, and saved on every change. Every decision about
+\emph{where} data lives and \emph{in what format} sits in
+\code{PersistenceManager}. No other class builds a data path or parses a data
+file.
+
+Saving goes through a \code{juce::TemporaryFile}, so the real file is replaced
+only once the write has fully succeeded.
+
+\smartfig{09-persistence-savejson}{Saving through a temporary file. A crash
+part-way through cannot truncate an existing library.}{fig:savejson}
+
+This is not a hypothetical edge case. The library saves on almost every action
+(adding a track, setting a cue, detecting a tempo), so a mid-write crash was
+basically guaranteed to happen eventually if I did not guard for it.
+
+On load, tracks whose file has since been moved or deleted are dropped instead of
+appearing as rows that can never play.
+
+\smartfig{10-library-prune}{Dead rows are pruned on load.}{fig:prune}
+
+\smartfig{data-folder}{The application data folder: \code{library.json},
+\code{sampler.json}, and the \code{samples} and \code{recordings}
+directories.}{fig:datafolder}
+\smartfig{library-json}{\code{library.json}, showing a saved BPM and cue
+points.}{fig:libraryjson}
+
+\paragraph{Evidence.} Three \code{.wav} files of known length were added and their
+durations read back as 3.00, 5.50 and 8.25 seconds. An edited BPM and a cue point
+both survived a fresh load. Search matched case-insensitively, and behaved
+correctly on an empty term and on a term matching nothing. A track whose file was
+deleted from disk between sessions was absent after reload.
+
+%==============================================================================
+\section{R3: Hot cues}
+%==============================================================================
+
+\subsection{R3A: Assigning cues while playing or paused}
+
+Each deck has eight cue slots and a CLEAR ALL button, laid out by
+\code{HotCueComponent}. Clicking an empty slot stores the current playhead
+position.
+
+\smartfig{12-hotcue-setcue}{Setting a cue. A position past the end of the file is
+refused instead of being stored as something the deck can never seek
+to.}{fig:setcue}
+
+This reads \code{AudioTransportSource::getCurrentPosition()}, which is valid
+whether the transport is running or stopped. Setting a cue therefore behaves
+identically while playing and while paused, with no second code path and no
+special case to get wrong.
+
+\subsection{R3B: Modifying cues individually}
+
+Each slot is independent. Clicking an empty slot stores the playhead; clicking a
+set slot jumps to it; alt-clicking a set slot clears just that one, after which
+it behaves as empty again and the next click stores a new position. Cue three can
+be moved without touching cues one, two and four.
+
+\smartfig{11-hotcue-buttonclicked}{One click handler covering all three
+behaviours: set, jump, and alt-click to clear.}{fig:cueclick}
+
+\paragraph{Why alt-click and not overwrite-on-click.} If clicking a set slot just
+overwrote it, one mis-click mid-mix wipes a cue you spent time placing. I wanted
+the destructive option to require a deliberate extra step, not to be the default
+click behaviour.
+
+Set slots turn orange and carry their position in the button label, so it is
+possible to see where a cue points without jumping to it and interrupting the
+mix.
+
+\smartfig{hotcues-set}{The cue grid with several slots set. Orange slots show
+their stored position in seconds.}{fig:cues}
+
+\subsection{R3C: Clearing all cues}
+
+A dedicated CLEAR ALL button per deck. It writes a full row of \code{Track::noCue}
+sentinels through the same commit path as any other cue change, which keeps cue
+writing and saving in one place instead of several.
+
+\subsection{R3D: Persisting cues per track}
+
+Cue positions are fields on \code{Track}, so they are saved and loaded with the
+library. They belong to the track, so loading it onto the other deck brings its
+cues along.
+
+Reading is defensive, because a library file written by a different build may
+carry a different number of cues than the current build expects. The cue count
+was raised from four to eight during development, and existing libraries kept
+loading without any special handling.
+
+\smartfig{15-track-cue-persistence}{Cues are read defensively, so a library
+written by an older build still loads.}{fig:cuepersist}
+
+\subsection{A design decision: refer to the track by index, not by pointer}
+
+My original plan had \code{HotCueComponent::setTrack(Track*)}. I changed it to
+\code{setLoadedTrack(int libraryIndex)}.
+
+Because \code{juce::Array} can reallocate as it grows, a \code{Track*} held by a
+deck would go stale the moment another file got added to the library, which
+happens all the time. Looking it up by index instead of caching a pointer means
+that cannot happen at all, rather than me having to remember to invalidate it in
+every place a file gets added.
+
+\smartfig{14-hotcue-loadedtrack}{Resolving the track through the library each
+time, so nothing is left holding a stale pointer.}{fig:loadedtrack}
+
+A deck holding no library track returns \code{nullptr} here, and every cue
+operation checks it first, so cue actions on an empty deck do nothing at all.
+
+\subsection{Laying out eight slots}
+
+Eight cue buttons and a CLEAR ALL in a single row would leave each button around
+55 pixels wide: too narrow to read a position in, and too narrow to hit reliably
+during a mix. The grid is two rows instead, with CLEAR ALL keeping a full-height
+column of its own. The column count is derived from the number of buttons instead
+of being hard-coded, so changing \code{Track::maxCuePoints} does not also require
+a layout change.
+
+\smartfig{13-hotcue-grid}{The cue grid layout, derived from the button count.}{fig:cuegrid}
+
+\paragraph{Evidence.} Cues set at 1.5\,s and 4.0\,s landed at those positions, and
+jumping moved the playhead correctly. An empty slot was a no-op. A cue past the
+end of the file was refused. Clearing one slot left the others intact. Both set
+and cleared states survived a restart, and a library saved by the four-slot build
+loaded correctly into the eight-slot one.
+
+%==============================================================================
+\section{R4: Recording and the loop sampler}
+\label{sec:r4}
+%==============================================================================
+
+This was the highest-risk part of the assignment and the part I would most want a
+reader to look at closely.
+
+\subsection{R4A: Recording from the decks and from the microphone}
+
+\paragraph{Why the mixer had to go.} Recording deck one in isolation is impossible
+once both decks have been summed into a single buffer. So \code{MainComponent}
+renders each deck separately, offers it to the recorder, and sums the result by
+hand.
+
+\smartfig{04-render-deck}{Rendering one deck, offering it to the recorder, and
+adding it to the output.}{fig:renderdeck}
+
+\code{deckBuffer} is sized once, in \code{prepareToPlay}. The chunking loop exists
+because an audio device can hand you a block larger than the size it promised,
+and resizing a buffer at that moment would allocate memory on the audio thread,
+which is exactly the kind of thing that produces an audible glitch under load.
+
+\paragraph{Audio thread discipline.} Disk writing goes through
+\code{AudioFormatWriter::ThreadedWriter} on a background \code{TimeSliceThread}.
+The audio thread takes a \emph{try}-lock and gives up if it cannot get it.
+
+\smartfig{17-recorder-capture}{The audio thread's capture path: a try-lock, a
+block copy, and a counter. It never allocates, touches the file system or
+blocks.}{fig:capture}
+
+I did not want a recording to silently come out broken, so dropped blocks get
+counted and exposed via \code{getDroppedBlockCount()} instead of just
+vanishing.
+
+The class documents its threading contract in the header, because a reader needs
+to know which thread may call what before touching any of it.
+
+\smartfig{30-recorder-threading-doc}{\code{AudioRecorder}'s threading contract,
+stated in the header.}{fig:threadingdoc}
+
+\paragraph{The microphone path.} \code{AudioRecorder} is registered as a second
+device callback so that it can see the input channels and learn the device sample
+rate. Because it is a secondary callback, whatever it leaves in the output buffer
+gets \emph{added} to the device output. It therefore has to leave silence behind:
+
+\begin{lstlisting}
+// This recorder is a secondary device callback; the audio it is handed is
+// added to the device output, so it must leave silence behind.
+for (int i = 0; i < numOutputChannels; ++i)
+{
+    if (outputChannelData[i] != nullptr)
+    {
+        juce::FloatVectorOperations::clear(outputChannelData[i], numSamples);
+    }
+}
+\end{lstlisting}
+
+Omitting that clear doubled the output level of everything the application
+played.
+
+\paragraph{A bug worth describing, because it was ordering and not logic.}
+The first deck recording produced a valid 104-byte WAV header and no audio at
+all. The cause: \code{beginWriting} calls \code{stop()} first to end any
+recording already in progress, and \code{stop()} disarms the deck. It was
+clearing the arm flag that \code{startRecordingFromDeck} had just set. The fix is
+to arm the deck only once the writer is open.
+
+\smartfig{16-recorder-arming}{Arming the deck after the writer is open, not
+before.}{fig:arming}
+
+\code{stop()} decides whether it is actually ending a real recording before it
+tears down the writer, which is why \code{onRecordingFinished} only fires once,
+and only after the file has been flushed and closed. Nothing downstream ever sees
+a half-written file.
+
+\smartfig{18-recorder-stop}{Stopping: decide first, then tear down, then
+announce.}{fig:stop}
+
+\smartfig{recording-active}{Recording deck one. The REC button turns red, the
+other deck's is disabled, and the status bar names the file being
+written.}{fig:recactive}
+\smartfig{recording-saved}{After stopping. The status bar shows the saved path and
+reveals the file in Finder when clicked.}{fig:recsaved}
+
+\subsection{R4B: Displaying and playing back recorded loops}
+
+\code{LoopSampler} is the panel: a table of samples with ADD, REMOVE, PLAY, STOP,
+a loop toggle, a gain slider, and ``\code{> L}'' and ``\code{> R}'' to send a
+sample to either deck. Double-clicking a row previews it within the panel.
+\code{SamplePlayer} handles the playback and is deliberately lighter than
+\code{DJAudioPlayer}, with no speed control and no seeking, because a sample pad
+needs neither.
+
+A finished recording is taken into the sampler automatically, so a loop captured
+off a deck can be triggered straight back over the mix without the user going to
+find the file.
+
+\smartfig{19-recording-to-sampler}{A finished recording reaches both the library
+and the sampler panel.}{fig:rectosampler}
+\smartfig{20-sampler-addrecorded}{The sampler's side of it. The recording itself
+stays in the recordings folder and the sampler works from its own copy, exactly
+as it does for any other added file.}{fig:addrecorded}
+
+Retriggering a sample restarts it from the beginning.
+
+\smartfig{22-sampleplayer-play}{Retriggering restarts from zero, so a sample
+behaves like a pad instead of resuming where it left off.}{fig:sampleplay}
+
+I mix the sampler's preview in \emph{after} the recorder taps the signal, on
+purpose. Otherwise auditioning a sample while recording would bleed into the
+file. I left a comment there, since it would be an easy thing to accidentally
+reorder later.
+
+\smartfig{sampler-panel}{The loop sampler. The row is a loop recorded from a
+deck, which reached the panel on its own when the recording finished.}{fig:sampler}
+
+\subsection{R4C: Persisting and managing the sample list}
+
+The sample list is its own file, \code{sampler.json}, kept separate from the music
+library. Samples are loops and one-shots, not tracks, and mixing them into the
+playlist would make the library worse at the job it exists to do.
+
+Files added through the interface, dropped onto the panel, or arriving as a
+finished recording are \emph{copied} into the application's \code{samples}
+folder.
+
+\smartfig{21-sampler-copyin}{Samples are copied into the samples folder. A file
+already living there is left alone, so re-adding one does not pile up
+copies.}{fig:copyin}
+
+The sample set therefore survives the original file being moved or deleted. On
+startup, \code{load()} reads \code{sampler.json} and \emph{then} scans the samples
+folder, so a file dropped into that folder by hand also appears.
+
+REMOVE only takes the row out of the sample list, it does not touch the file on
+disk. I did not want a table button to be the thing that quietly deletes
+someone's audio. Anything the format manager cannot read is refused when it is
+added, so it never becomes a row that will not play.
+
+\paragraph{Evidence.} Two hundred blocks pushed through the real render loop
+produced a readable two-channel, 44.1\,kHz WAV of exactly the expected sample
+count, with zero dropped blocks. Its peak level matched the deck's own output,
+which is also what proves the unarmed second deck never leaked in. The microphone path was confirmed by hand. For the sampler: play, stop
+and retrigger all behaved as intended; audio continued past the end of the file
+when looping and stopped when not; non-audio files and duplicates were refused;
+and the list survived a restart.
+
+%==============================================================================
+\section{R5: Beats Per Minute}
+%==============================================================================
+
+\subsection{R5A: What BPM is, and how a DJ application uses it}
+
+BPM is a single number giving a track's tempo in beats per minute. In a DJ
+application it is the number that decides whether two tracks can be played
+together at all.
+
+\paragraph{Scenario one: choosing the next track.} A DJ playing a 128\,BPM house
+track needs the next one to be close, because a deck can only be stretched so far
+before it stops sounding right. Roughly $\pm$6\% is the usual working tolerance.
+Beyond that, vocals are audibly pitched up or down and drums lose their weight.
+With a BPM column in the library, the DJ scans or sorts and finds a candidate in
+a couple of seconds. Without one they are auditioning tracks in headphones under
+time pressure, which is precisely the moment you do not want to be guessing. In
+Otodecks this is the BPM column in the playlist, and that $\pm$6\% maps directly
+onto the SPEED slider.
+
+\paragraph{Scenario two: beatmatching a transition.} To mix two tracks together
+their beats have to land on top of one another. That needs the same tempo, and
+alignment of the beats within it. BPM gives the first of those. If deck one is at
+128 and the incoming track is 124, the DJ knows before touching anything that the
+incoming deck needs a ratio of $128/124 \approx 1.032$, sets it, and is left with
+only the alignment to nudge. Working that out by ear in real time takes practice
+most people do not have. Doing it from a BPM number is just division. Combined
+with hot cues, a
+DJ can drop the incoming track from a cue placed on a downbeat at a tempo that is
+already matched, which is how live remixing is done.
+
+\smartfig{bpm-column}{Detected tempo shown in the library's BPM column. Tracks
+that have not been analysed show a dash instead of a fabricated
+number.}{fig:bpmcolumn}
+
+\subsection{R5B: Alternative techniques and what commercial applications do}
+
+BPM on its own is limited. It gives the tempo but not \emph{where} the beats fall,
+and it assumes the tempo never changes. The techniques that address this:
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Beat grids.} Rekordbox, Serato and Traktor store a grid of beat
+    positions across the whole track, anchored to a downbeat, as well as a BPM.
+    This is strictly more information. It survives tempo drift in live-recorded or
+    older material, and it lets the software align \emph{phase} and not just rate.
+    It is also why those applications let the user drag the grid: automatic
+    detection places the beats roughly right and a human corrects the anchor.
+  \item \textbf{Sync buttons.} Built on beat grids, these match tempo and phase in
+    a single press. What the DJ gives up is control. When the grid is wrong, sync
+    is confidently wrong.
+  \item \textbf{Key detection and harmonic mixing.} Camelot or Open Key notation.
+    Two tracks at the same tempo can still clash if their keys fight, so modern
+    libraries show key alongside tempo and DJs select on both.
+  \item \textbf{Time-stretching instead of resampling.} Otodecks changes speed by
+    resampling, which changes pitch with it, so a track sped up 6\% is also 6\%
+    sharp. Commercial applications use a phase vocoder or something similar to
+    change tempo while holding pitch, sold as ``Master Tempo'' or ``Key Lock''.
+    This is the largest functional gap between this application's speed control
+    and a professional one.
+  \item \textbf{Tap tempo.} The manual fallback: the DJ taps the beat and the
+    application averages the intervals. It is slower and less precise, but it
+    works on anything at all, including material with no clear percussive onsets
+    where automatic detection simply fails. Otodecks implements this; see
+    Section~\ref{sec:r5d}.
+\end{itemize}
+
+\subsection{R5C: How BPM would be calculated, conceptually}
+
+Tempo estimation is three problems in sequence. Find where the events are, find
+the period at which they repeat, and turn that period into a number.
+
+\paragraph{Stage one: onset detection.} Musical beats usually coincide with a
+sharp rise in energy: a kick, a snare, a chord stab. Reduce the audio to a
+low-rate envelope by taking the RMS energy of each short frame, then take the
+difference between consecutive frames. The important part is to half-wave rectify
+that difference, keeping only the \emph{rises}. A falling edge is the tail of a
+hit that has already been counted, and counting it again would place a spurious
+onset just after every real one.
+
+\paragraph{Stage two: periodicity.} The onset envelope is a spiky signal that
+repeats at the beat period. Autocorrelation, which correlates the signal with a
+time-shifted copy of itself, peaks at the lags where those spikes line up, and
+the strongest peak within a plausible tempo range gives the beat period. Two
+alternatives are a Fourier transform of the onset envelope, which finds the same
+periodicity in the frequency domain, and detecting discrete onset times and
+taking the median gap between them.
+
+\paragraph{Stage three: conversion, and the octave problem.} A lag in frames
+becomes seconds via the hop size and sample rate, and then $\text{BPM} = 60 /
+\text{period}$. The hard part is that autocorrelation cannot distinguish 70 from
+140. If spikes line up at a lag of $N$ frames, they also line up at $2N$. This is
+the ``octave error'', and it is the most common failure mode in tempo detection.
+Fixing it needs a second, independent piece of evidence, not a better peak
+search.
+
+\subsection{R5D: Implementation and visualisation}
+\label{sec:r5d}
+
+\code{BPMAnalyser} implements the method above. Pressing \textbf{BPM} in the
+playlist analyses the selected track and writes the result into the BPM column,
+where it is saved with the library and survives a restart.
+
+\paragraph{The envelope and onset strength.} RMS energy per 256-sample hop,
+averaged across up to two channels. A mono sum is enough for onset detection and
+costs less than treating the channels separately. The difference is then
+rectified.
+
+\smartfig{23-bpm-onset}{Onset strength: only rises in energy count.}{fig:onset}
+
+\paragraph{Autocorrelation, bounded and normalised.} Only the lags a real tempo
+could occupy are searched, and each is divided by its overlap length.
+
+\smartfig{24-bpm-autocorrelate}{Normalised autocorrelation over the tempo
+range.}{fig:autocorr}
+
+Without that normalisation the method is systematically biased towards fast
+tempos, because a short lag simply has more terms in its sum than a long one.
+
+\paragraph{Sub-frame precision.} At a 256-sample hop, one frame is worth a couple
+of BPM, and the true period rarely lands exactly on a frame boundary. Fitting a
+parabola across the winning peak and its two neighbours recovers the fractional
+part.
+
+\smartfig{25-bpm-parabolic}{Parabolic interpolation across the correlation
+peak.}{fig:parabolic}
+
+\paragraph{The octave check.} A second estimate is computed independently, from
+the median gap between detected onset peaks. If the two disagree by roughly a
+factor of two, the interval estimate wins.
+
+\smartfig{27-bpm-intervals}{The independent estimate, from the median gap between
+onsets.}{fig:intervals}
+\smartfig{26-bpm-octave-check}{The cross-check that resolves half- and
+double-tempo errors.}{fig:octave}
+
+The median is used because a single missed or doubled onset drags a mean badly
+and barely moves a median.
+
+\paragraph{Tap tempo.} The \textbf{TAP} button beside BPM implements the manual
+fallback discussed in R5B. \code{BPMAnalyser::registerTap} timestamps each tap and
+discards a stale count on its own, and \code{getBPMFromUserTap} averages the
+intervals once three taps have arrived.
+
+\smartfig{28-tap-tempo}{Tap tempo. The button reports its count from the first
+click, and the tempo once it has one.}{fig:tap}
+
+The button gives feedback from the very first click, because two silent clicks
+read as a dead button. The result is written onto the selected track on
+\emph{every} tap, so the BPM column tightens as the user keeps tapping, while the
+write to \emph{disk} waits until the sequence goes quiet. Saving on every tap would mean a file write twice a second while somebody
+taps.
+
+\smartfig{29-tap-finish}{Closing off a tap sequence: save once, then reset.}{fig:tapfinish}
+
+A \code{Timer} matched to the analyser's own 2.5\,second tap timeout is what ends
+the sequence, so the button and the analyser can never disagree about whether a
+count is still live.
+
+\smartfig{tap-tempo}{The TAP button mid-count, and the resulting tempo in the BPM
+column.}{fig:tapshot}
+
+Both routes fold their result into the range 70--180\,BPM, which is why tapping a
+60\,BPM ballad reports 120. A half-time and a double-time reading describe the
+same tempo, and folding them makes values comparable across the library.
+
+\paragraph{Evidence.} Against synthesised click tracks of known tempo: 90 gave
+89.93, 120 gave 120.12, 128 gave 127.78 and 140 gave 139.80. A 100\,BPM track
+with deliberately offbeat hats, built specifically to tempt a double-tempo error,
+gave 100.14. All within 0.25\,BPM. Files that cannot be read return $0$ instead of
+a guess, and the playlist shows a dash. Tap tempo at 500\,ms intervals gave
+119.38\,BPM.
+
+%==============================================================================
+\section{Assumptions and decisions}
+%==============================================================================
+
+\paragraph{Data lives in the OS application data folder, not the project folder.}
+My original plan put everything in a \code{data/} directory beside the executable.
+That does not survive being run from a \code{.app} bundle on macOS, and it is the
+wrong location on Windows. It is now
+\code{\textasciitilde/Library/Application Support/Otodecks} and
+\code{\%APPDATA\%\textbackslash Otodecks}, decided in one place:
+
+\begin{lstlisting}
+// On macOS that special location is ~/Library itself, not ~/Library/Application Support.
+#if JUCE_MAC
+root = root.getChildFile("Application Support");
+#endif
+\end{lstlisting}
+
+\paragraph{The library stores paths, not copies of your music.} Otodecks never
+moves or copies a track file; it stores the path. The sampler is the deliberate
+exception, because a sample set that breaks when you tidy your Downloads folder is
+not much of a sample set. That is also why removing a sample from the panel does
+not delete the file.
+
+\paragraph{Files loaded onto a deck join the library automatically.} The library
+therefore grows as you play, and grows again when a recording finishes. The alternative was a dragged-in file
+having nowhere to persist its hot cues, which seemed clearly worse.
+
+\paragraph{Panels do not know about decks.} \code{PlaylistComponent} and
+\code{LoopSampler} reach the decks only through \code{std::function} callbacks set
+by \code{MainComponent}. Neither holds a deck pointer or includes
+\code{DeckGUI.h}.
+
+\paragraph{Anything reachable from the audio callback avoids allocation, locks,
+logging and file access.} Values crossing the thread boundary are
+\code{std::atomic} or pass through the writer's FIFO. \code{deckBuffer} and
+\code{sampleBuffer} are sized in \code{prepareToPlay}, and oversized blocks are
+chunked so nothing triggers a resize.
+
+%==============================================================================
+\section{How this was tested}
+%==============================================================================
+
+Each stage was verified by a temporary console target compiled against the same
+sources, which drove the real classes headlessly and was deleted once it passed.
+That is how the recorder's arming bug and the NaN guard were found. Both would
+have been unreliable to surface by clicking around the interface, and the
+recording bug in particular produced a file that looked entirely plausible in a
+directory listing.
+
+The fade tail from \code{AudioTransportSource}'s gain ramp was tripping my
+silence check right after \code{stop()} and \code{setGain(0)}: three failures that
+were bad assertions, not bugs. Worth remembering that a failing test is not
+automatically proof the code is wrong.
+
+The application builds under two toolchains from the same \code{Source/} tree:
+CMake and CLion on macOS (clang, JUCE 8.0.4), and Projucer and Visual Studio on
+Windows (MSVC, JUCE 9.0.2). That was worth the effort for a reason beyond
+portability. Clang caught missing destructor \code{override}s that MSVC did not,
+and MSVC caught a variable in my own code shadowing \code{Component::flags} that
+clang did not.
+
+Under JUCE's recommended warning flags, every remaining compiler warning is in
+one of the five template files: a \code{double} row height passed to
+\code{setBounds}, destructors without \code{override}, unused parameters, and two
+deprecated JUCE calls. The nine classes written for this assignment compile
+silently on both toolchains.
+
+%==============================================================================
+\section{Known limitations}
+%==============================================================================
+
+What the application still does badly:
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{BPM analysis blocks the message thread.} A long track freezes the
+    interface for a moment, and a wait cursor is the only warning the user gets.
+    Moving the analysis to a background thread is the correct fix and the obvious
+    next step.
+  \item \textbf{Only the first 60 seconds of a track are analysed.} Fine for
+    material at a constant tempo, wrong for anything that changes tempo part-way
+    through.
+  \item \textbf{Speed change is resampling, so it changes pitch with it.} There is
+    no key lock, as discussed under R5B.
+  \item \textbf{The library grows as you use the application}, because deck loads
+    and finished recordings are both added to it.
+  \item \textbf{Sample removal is list-only.} REMOVE forgets a sample but leaves
+    the copied file in the samples folder, so the folder accumulates over time.
+  \item \textbf{JUCE 7 or newer is required.} The recorder uses
+    \code{audioDeviceIOCallbackWithContext} and the sampler uses
+    \code{RangedDirectoryIterator}.
+\end{itemize}
+
+%==============================================================================
+\appendix
+\section{Building and running}
+%==============================================================================
+
+\paragraph{CMake (CLion or the command line).} JUCE is located automatically, in
+order: \code{libs/JUCE} inside the project, then \code{../JUCE} alongside it,
+otherwise fetched from GitHub at configure time. Override with
+\code{-DJUCE\_PATH=/path/to/JUCE}.
+
+\begin{lstlisting}[language=bash]
+cmake -B build
+cmake --build build
+\end{lstlisting}
+
+\paragraph{Projucer (Xcode or Visual Studio).} Open \code{OtoDecks.jucer}, set the
+global JUCE modules path to a JUCE 8 checkout, then save and open the generated
+project. Both build systems reference the same files in \code{Source/}, so they
+cannot drift apart.
+
+\paragraph{Where data is stored.}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+macOS   & \code{\textasciitilde/Library/Application Support/Otodecks/} \\
+Windows & \code{\%APPDATA\%\textbackslash Otodecks\textbackslash} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent
+containing \code{library.json}, \code{sampler.json}, \code{samples/} and
+\code{recordings/}. Deleting these resets the application to an empty state.
+
+\end{document}

@@ -79,7 +79,7 @@ MainComponent::MainComponent()
 
     recorder.onRecordingFinished = [this](const File& file)
     {
-        addRecordingToLibrary(file);
+        handleFinishedRecording(file);
     };
 
     auto refreshRecorderUI = [this]
@@ -277,13 +277,17 @@ void MainComponent::mouseDown (const MouseEvent& event)
     }
 }
 
-void MainComponent::addRecordingToLibrary (const File& file)
+void MainComponent::handleFinishedRecording (const File& file)
 {
     // EXTENSION: a finished recording joins the library so it can be played straight back.
     if (library.addTrack(file))
     {
         library.save();
     }
+
+    // ...and the sampler panel, so a loop recorded off a deck can be triggered
+    // over the mix without the user having to go and find the file.
+    loopSampler.addRecordedSample(file);
 
     updateRecorderStatus();
     deckGUI1.updateRecordButton();

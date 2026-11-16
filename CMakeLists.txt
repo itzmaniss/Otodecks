@@ -33,7 +33,7 @@ endif()
 # --- Application target ------------------------------------------------------
 juce_add_gui_app(Otodecks
     PRODUCT_NAME "Otodecks"
-    COMPANY_NAME "Otodecks"
+    COMPANY_NAME "Balasubramanian_Manish"
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "Otodecks records from the microphone when you press RECORD MIC.")
 

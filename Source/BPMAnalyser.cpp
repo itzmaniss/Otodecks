@@ -250,6 +250,11 @@ void BPMAnalyser::clearTaps()
 	tapTimesMs.clear();
 }
 
+int BPMAnalyser::getTapCount() const
+{
+	return tapTimesMs.size();
+}
+
 double BPMAnalyser::getBPMFromUserTap() const
 {
 	// EXTENSION: manual tap tempo, the fallback for tracks the analysis cannot read.

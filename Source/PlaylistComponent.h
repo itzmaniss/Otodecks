@@ -18,7 +18,8 @@ class PlaylistComponent : public juce::Component,
                           public juce::Button::Listener,
                           public juce::TextEditor::Listener,
                           public juce::ChangeListener,
-                          public juce::FileDragAndDropTarget
+                          public juce::FileDragAndDropTarget,
+                          public juce::Timer
 {
 public:
 	PlaylistComponent(MusicLibrary& libraryToUse, BPMAnalyser& analyserToUse);
@@ -44,6 +45,9 @@ public:
 	bool isInterestedInFileDrag(const juce::StringArray& files) override;
 	void filesDropped(const juce::StringArray& files, int x, int y) override;
 
+	/** Ends a tap sequence that has gone quiet; see tapTempo(). */
+	void timerCallback() override;
+
 private:
 	/** Turns a table row into the library index behind it, or -1 if there is none. */
 	int libraryIndexForRow(int rowNumber) const;
@@ -55,6 +59,13 @@ private:
 
 	/** Analyses the selected track and stores the result on it. */
 	void analyseSelectedTrack();
+
+	/** Records one beat of a manual tap and, once there are enough, writes the
+	    resulting tempo onto the selected track. */
+	void tapTempo();
+
+	/** Closes off a tap sequence: saves the result once and resets the button. */
+	void finishTapTempo();
 
 	static juce::String formatDuration(double seconds);
 
@@ -68,7 +79,7 @@ private:
 	static constexpr int rowHeight = 22;
 	static constexpr int controlHeight = 26;
 	static constexpr int padding = 4;
-	static constexpr int buttonCount = 5;
+	static constexpr int buttonCount = 6;
 
 	MusicLibrary& library;
 	BPMAnalyser& analyser;
@@ -83,6 +94,10 @@ private:
 	juce::TextButton loadToDeckOneButton { "LOAD LEFT" };
 	juce::TextButton loadToDeckTwoButton { "LOAD RIGHT" };
 	juce::TextButton analyseBPMButton { "BPM" };
+	juce::TextButton tapTempoButton { "TAP" };
+
+	/** True between a tap that produced a tempo and the save that commits it. */
+	bool tapResultNeedsSaving = false;
 
 	juce::FileChooser fileChooser { "Select audio files to add to the library..." };
 

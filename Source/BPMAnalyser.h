@@ -40,6 +40,17 @@ public:
 	void clearTaps();
 	double getBPMFromUserTap() const;
 
+	/** Taps counted so far, so the interface can show progress before there are
+	    enough of them to average. */
+	int getTapCount() const;
+
+	/** Taps older than this start a new count rather than averaging with a stale
+	    one. Public so the interface can time its own reset to match. */
+	static constexpr int tapTimeoutMs = 2500;
+
+	/** Below this many taps there is not enough to average. */
+	static constexpr int minimumTaps = 3;
+
 	/** Tempo search bounds. Anything outside is folded into this range. */
 	static constexpr double minBPM = 70.0;
 	static constexpr double maxBPM = 180.0;
@@ -58,12 +69,6 @@ private:
 	/** Only the opening of a track is analysed; tempo rarely changes and long
 	    files would otherwise make the user wait. */
 	static constexpr double maxAnalysisSeconds = 60.0;
-
-	/** Taps older than this start a new count rather than averaging with a stale one. */
-	static constexpr int tapTimeoutMs = 2500;
-
-	/** Below this many taps there is not enough to average. */
-	static constexpr int minimumTaps = 3;
 
 	juce::AudioFormatManager& formatManager;
 

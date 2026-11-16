@@ -1,0 +1,89 @@
+{
+  "tracks": [
+    {
+      "path": "/Users/itzmaniss/Library/Application Support/Otodecks/recordings/deck 2026-09-07 14-07-05.wav",
+      "name": "deck 2026-09-07 14-07-05",
+      "lengthInSeconds": 0.696598639455782,
+      "bpm": 0.0,
+      "dateAdded": 1788761226706,
+      "cuePoints": [
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0
+      ]
+    },
+    {
+      "path": "/Users/itzmaniss/Downloads/0906.mp4",
+      "name": "0906",
+      "lengthInSeconds": 119.814965986394554,
+      "bpm": 86.861845690672808,
+      "dateAdded": 1788761341496,
+      "cuePoints": [
+        7.333270833333334,
+        33.908270833333333,
+        60.6186875,
+        67.979604166666661,
+        95.706270833333335,
+        -1.0,
+        -1.0,
+        -1.0
+      ]
+    },
+    {
+      "path": "/Users/itzmaniss/Library/Application Support/Otodecks/recordings/deck 2026-09-07 14-09-07.wav",
+      "name": "deck 2026-09-07 14-09-07",
+      "lengthInSeconds": 2.464,
+      "bpm": 178.240109962471962,
+      "dateAdded": 1788761349782,
+      "cuePoints": [
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0
+      ]
+    },
+    {
+      "path": "/Users/itzmaniss/Library/Application Support/Otodecks/recordings/mic 2026-09-07 14-09-09.wav",
+      "name": "mic 2026-09-07 14-09-09",
+      "lengthInSeconds": 9.109333333333334,
+      "bpm": 179.748352306770528,
+      "dateAdded": 1788761358898,
+      "cuePoints": [
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0
+      ]
+    },
+    {
+      "path": "/Users/itzmaniss/Library/Application Support/Otodecks/recordings/deck 2026-09-14 14-50-43.wav",
+      "name": "deck 2026-09-14 14-50-43",
+      "lengthInSeconds": 28.309333333333335,
+      "bpm": 0.0,
+      "dateAdded": 1789368671673,
+      "cuePoints": [
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0
+      ]
+    }
+  ]
+}

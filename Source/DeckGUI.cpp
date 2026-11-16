@@ -20,9 +20,11 @@ DeckGUI::DeckGUI(DJAudioPlayer* _player,
                 AudioRecorder& recorderToUse
 // My code ends here
            ) : waveformDisplay(formatManagerToUse, cacheToUse),
+// My code starts here
                library(libraryToUse),
                recorder(recorderToUse),
                hotCueComponent(libraryToUse),
+// My code ends here
                player(_player)
 {
     // My code starts here
@@ -121,11 +123,11 @@ void DeckGUI::resized()
     posSlider.setBounds(sliderLabelWidth, rowH * 4, getWidth() - sliderLabelWidth, rowH);
     waveformDisplay.setBounds(0, rowH * 5, getWidth(), rowH * 2);
     // My code starts here
-    hotCueComponent.setBounds(0, rowH * 7, getWidth(), rowH);
+    hotCueComponent.setBounds(0, rowH * 7, getWidth(), rowH * 2);
     // My code ends here
-    loadButton.setBounds(0, rowH * 8, getWidth(), rowH);
+    loadButton.setBounds(0, rowH * 9, getWidth(), rowH);
     // My code starts here
-    recordButton.setBounds(0, rowH * 9, getWidth(), rowH);
+    recordButton.setBounds(0, rowH * 10, getWidth(), rowH);
     // My code ends here
 
 }
@@ -172,7 +174,10 @@ void DeckGUI::buttonClicked(Button* button)
         {
             File chosenFile = chooser.getResult();
             if (chosenFile.existsAsFile()){
+                // My code starts here
+                // Was player->loadURL(URL{chosenFile}); same fix as filesDropped.
                 loadFile(chosenFile);
+                // My code ends here
             }
         });
     }
@@ -208,7 +213,11 @@ void DeckGUI::filesDropped (const StringArray &files, int x, int y)
   std::cout << "DeckGUI::filesDropped" << std::endl;
   if (files.size() == 1)
   {
+    // My code starts here
+    // Was player->loadURL(...), which loaded the player but left the waveform
+    // blank. Every entry point now goes through loadFile instead.
     loadFile(File{files[0]});
+    // My code ends here
   }
 }
 

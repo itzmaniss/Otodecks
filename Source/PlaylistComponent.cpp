@@ -23,12 +23,14 @@ PlaylistComponent::PlaylistComponent(MusicLibrary& libraryToUse, BPMAnalyser& an
 	addAndMakeVisible(loadToDeckOneButton);
 	addAndMakeVisible(loadToDeckTwoButton);
 	addAndMakeVisible(analyseBPMButton);
+	addAndMakeVisible(tapTempoButton);
 
 	addTracksButton.addListener(this);
 	removeTrackButton.addListener(this);
 	loadToDeckOneButton.addListener(this);
 	loadToDeckTwoButton.addListener(this);
 	analyseBPMButton.addListener(this);
+	tapTempoButton.addListener(this);
 
 	library.addChangeListener(this);
 	rebuildVisibleRows();
@@ -36,6 +38,7 @@ PlaylistComponent::PlaylistComponent(MusicLibrary& libraryToUse, BPMAnalyser& an
 
 PlaylistComponent::~PlaylistComponent()
 {
+	stopTimer();
 	library.removeChangeListener(this);
 	tableComponent.setModel(nullptr);
 }
@@ -61,7 +64,8 @@ void PlaylistComponent::resized()
 	removeTrackButton.setBounds(buttonRow.removeFromLeft(buttonWidth).reduced(1, 0));
 	loadToDeckOneButton.setBounds(buttonRow.removeFromLeft(buttonWidth).reduced(1, 0));
 	loadToDeckTwoButton.setBounds(buttonRow.removeFromLeft(buttonWidth).reduced(1, 0));
-	analyseBPMButton.setBounds(buttonRow.reduced(1, 0));
+	analyseBPMButton.setBounds(buttonRow.removeFromLeft(buttonWidth).reduced(1, 0));
+	tapTempoButton.setBounds(buttonRow.reduced(1, 0));
 
 	area.removeFromBottom(padding);
 	tableComponent.setBounds(area);
@@ -134,11 +138,11 @@ void PlaylistComponent::buttonClicked(juce::Button* button)
 {
 	if (button == &addTracksButton)
 	{
-		auto flags = juce::FileBrowserComponent::openMode
+		auto chooserFlags = juce::FileBrowserComponent::openMode
 			| juce::FileBrowserComponent::canSelectFiles
 			| juce::FileBrowserComponent::canSelectMultipleItems;
 
-		fileChooser.launchAsync(flags, [this](const juce::FileChooser& chooser)
+		fileChooser.launchAsync(chooserFlags, [this](const juce::FileChooser& chooser)
 		{
 			addFilesToLibrary(chooser.getResults());
 		});
@@ -164,6 +168,10 @@ void PlaylistComponent::buttonClicked(juce::Button* button)
 	else if (button == &analyseBPMButton)
 	{
 		analyseSelectedTrack();
+	}
+	else if (button == &tapTempoButton)
+	{
+		tapTempo();
 	}
 }
 
@@ -275,6 +283,63 @@ void PlaylistComponent::analyseSelectedTrack()
 	track.bpm = bpm;
 	library.updateTrack(libraryIndex, track);
 	library.save();
+}
+
+void PlaylistComponent::tapTempo()
+{
+	analyser.registerTap();
+
+	// The analyser drops a stale count by itself, but only when the next tap
+	// arrives. Matching its timeout here means the button stops advertising a
+	// count that has already expired.
+	startTimer(BPMAnalyser::tapTimeoutMs);
+
+	auto bpm = analyser.getBPMFromUserTap();
+
+	if (bpm <= 0.0)
+	{
+		// Not enough taps to average yet. Showing the count stops the first two
+		// clicks looking like a dead button.
+		tapTempoButton.setButtonText("TAP " + juce::String(analyser.getTapCount()));
+		return;
+	}
+
+	tapTempoButton.setButtonText(juce::String(bpm, 1));
+
+	auto libraryIndex = selectedLibraryIndex();
+
+	if (libraryIndex < 0)
+	{
+		// Nothing to write to, but the reading is still worth showing.
+		return;
+	}
+
+	auto track = library.getTrack(libraryIndex);
+	track.bpm = bpm;
+
+	// Updated on every tap so the BPM column tightens as the user keeps tapping,
+	// but written to disk only once the sequence ends - see finishTapTempo.
+	library.updateTrack(libraryIndex, track);
+	tapResultNeedsSaving = true;
+}
+
+void PlaylistComponent::finishTapTempo()
+{
+	stopTimer();
+
+	if (tapResultNeedsSaving)
+	{
+		library.save();
+		tapResultNeedsSaving = false;
+	}
+
+	analyser.clearTaps();
+	tapTempoButton.setButtonText("TAP");
+}
+
+void PlaylistComponent::timerCallback()
+{
+	finishTapTempo();
 }
 
 juce::String PlaylistComponent::formatDuration(double seconds)

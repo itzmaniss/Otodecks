@@ -59,8 +59,9 @@ private:
 
     void updateRecorderStatus();
 
-    /** Folds a finished recording into the library so it can be played back. */
-    void addRecordingToLibrary (const File& file);
+    /** Takes a finished recording into both the library and the sampler panel,
+        so it can be played on a deck or triggered as a loop. */
+    void handleFinishedRecording (const File& file);
 
     /** What this platform calls its file browser, for the status bar wording. */
     static String fileBrowserName();
@@ -70,10 +71,16 @@ private:
     // My code ends here
 
     DJAudioPlayer player1{formatManager};
-    DeckGUI deckGUI1{&player1, formatManager, thumbCache, library, recorder}; 
+    // My code starts here
+    // library and recorder added to the template's argument list.
+    DeckGUI deckGUI1{&player1, formatManager, thumbCache, library, recorder};
+    // My code ends here
 
     DJAudioPlayer player2{formatManager};
-    DeckGUI deckGUI2{&player2, formatManager, thumbCache, library, recorder}; 
+    // My code starts here
+    // library and recorder added to the template's argument list.
+    DeckGUI deckGUI2{&player2, formatManager, thumbCache, library, recorder};
+    // My code ends here
 
     // My code starts here
     BPMAnalyser bpmAnalyser{formatManager};

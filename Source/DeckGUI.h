@@ -33,8 +33,11 @@ public:
     DeckGUI(DJAudioPlayer* player, 
            AudioFormatManager & 	formatManagerToUse,
            AudioThumbnailCache & 	cacheToUse,
+// My code starts here
            MusicLibrary& libraryToUse,
-           AudioRecorder& recorderToUse);
+           AudioRecorder& recorderToUse
+// My code ends here
+           );
     ~DeckGUI();
 
     // My code starts here
@@ -95,8 +98,9 @@ private:
 
     DJAudioPlayer* player; 
 
-    // Rows the deck is laid out in; the hot cue row is one of them.
-    static constexpr int layoutRows = 10;
+    // Rows the deck is laid out in. The waveform takes two and the hot cue grid
+    // takes two; the rest are one row each.
+    static constexpr int layoutRows = 11;
 
     // Slider ranges and the values a fresh deck starts at. A deck that starts
     // at the bottom of each range is silent and stalled, which reads as broken.

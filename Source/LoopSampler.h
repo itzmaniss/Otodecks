@@ -37,6 +37,11 @@ public:
 	SamplePlayer& getPreviewPlayer();
 
 	bool addSample(const juce::File& file);
+
+	/** Takes a finished recording into the sampler: copies it into the samples
+	    folder, adds the row and saves. False if it was unreadable or already there. */
+	bool addRecordedSample(const juce::File& file);
+
 	void removeSample(int index);
 
 	void previewSample(int index);
